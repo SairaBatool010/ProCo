@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from sqlalchemy.orm import Session
 
-from app.services.ai_stub import build_summary, classify_issue, estimate_cost, pick_vendor
+from app.services.ai_tools import build_summary, classify_issue, estimate_cost, pick_vendor
 from db import ChatMessage, ChatRole, Issue, IssueStatus
 
 SYSTEM_PROMPT = """You are ProCo, an AI assistant helping tenants report property maintenance issues.
