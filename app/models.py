@@ -55,6 +55,11 @@ class ChatMessageRead(BaseModel):
     created_at: datetime
 
 
+class ChatMessageCreate(BaseModel):
+    tenant_id: uuid.UUID
+    content: str
+
+
 class ChatRequest(BaseModel):
     tenant_id: uuid.UUID
     message: str

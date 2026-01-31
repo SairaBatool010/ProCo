@@ -46,6 +46,7 @@ class VendorSpecialty(enum.Enum):
 class ChatRole(enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
+    LANDLORD = "landlord"
 
 
 class User(Base):

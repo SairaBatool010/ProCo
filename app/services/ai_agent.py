@@ -66,6 +66,8 @@ def run_agent(
     for chat in history:
         if chat.role == ChatRole.USER:
             messages.append(HumanMessage(content=chat.content))
+        elif chat.role == ChatRole.ASSISTANT:
+            messages.append(AIMessage(content=chat.content))
         else:
             messages.append(AIMessage(content=chat.content))
     messages.append(SystemMessage(content=context_prompt))
