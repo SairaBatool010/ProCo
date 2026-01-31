@@ -44,6 +44,13 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
         issue_id=request.issue_id,
     )
 
+    if issue_id and request.issue_id is None:
+        db.query(ChatMessage).filter(
+            ChatMessage.tenant_id == tenant.id,
+            ChatMessage.property_id == property_id,
+            ChatMessage.issue_id.is_(None),
+        ).update({ChatMessage.issue_id: issue_id})
+
     user_message.issue_id = issue_id
     assistant_message = ChatMessage(
         issue_id=issue_id,

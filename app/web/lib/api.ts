@@ -22,6 +22,13 @@ export type ApiVendor = {
   rating: number | null;
 };
 
+export type WalletSummary = {
+  property_id: string;
+  balance: number;
+  used: number;
+  remaining: number;
+};
+
 export type ChatResponse = {
   response: string;
   issue_created: boolean;
@@ -74,6 +81,33 @@ export async function postIssueMessage(
 
 export async function fetchVendors(): Promise<ApiVendor[]> {
   return fetchJson<ApiVendor[]>("/vendors");
+}
+
+export async function fetchWallets(): Promise<WalletSummary[]> {
+  return fetchJson<WalletSummary[]>("/wallets");
+}
+
+export async function topupWallet(payload: {
+  property_id: string;
+  amount: number;
+  note?: string;
+}): Promise<WalletSummary> {
+  return fetchJson<WalletSummary>("/wallets/topup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateWalletBalance(payload: {
+  property_id: string;
+  balance: number;
+}): Promise<WalletSummary> {
+  return fetchJson<WalletSummary>("/wallets/balance", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function approveIssue(issueId: string): Promise<ApiIssue> {

@@ -87,6 +87,12 @@ class Property(Base):
     )
     issues: Mapped[list["Issue"]] = relationship(back_populates="property")
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="property")
+    wallet: Mapped["PropertyWallet | None"] = relationship(
+        back_populates="property", uselist=False
+    )
+    wallet_transactions: Mapped[list["WalletTransaction"]] = relationship(
+        back_populates="property"
+    )
 
 
 class Vendor(Base):
@@ -96,6 +102,7 @@ class Vendor(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
     specialty: Mapped[VendorSpecialty] = mapped_column(
         Enum(VendorSpecialty, name="vendor_specialty"), nullable=False
     )
@@ -167,6 +174,47 @@ class ChatMessage(Base):
     property: Mapped["Property | None"] = relationship(back_populates="messages")
 
 
+class PropertyWallet(Base):
+    __tablename__ = "property_wallets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    property_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False, unique=True
+    )
+    balance: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    created_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    property: Mapped["Property"] = relationship(back_populates="wallet")
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    property_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("properties.id"), nullable=False
+    )
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    property: Mapped["Property"] = relationship(back_populates="wallet_transactions")
+
+
 def get_engine():
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
@@ -212,24 +260,28 @@ def seed_dummy_data():
         vendors = [
             Vendor(
                 name="ABC HVAC",
+                email="dispatch@abchvac.example",
                 specialty=VendorSpecialty.HEATING,
                 hourly_rate=125.00,
                 rating=4.7,
             ),
             Vendor(
                 name="FlowFix Plumbing",
+                email="support@flowfix.example",
                 specialty=VendorSpecialty.PLUMBING,
                 hourly_rate=110.00,
                 rating=4.5,
             ),
             Vendor(
                 name="BrightSpark Electric",
+                email="hello@brightspark.example",
                 specialty=VendorSpecialty.ELECTRICAL,
                 hourly_rate=135.00,
                 rating=4.8,
             ),
             Vendor(
                 name="Handy General Co",
+                email="contact@handygeneral.example",
                 specialty=VendorSpecialty.GENERAL,
                 hourly_rate=95.00,
                 rating=4.2,
@@ -271,6 +323,13 @@ def seed_dummy_data():
             ),
         ]
 
+        wallet = PropertyWallet(property=property_, balance=1000.00)
+        wallet_topup = WalletTransaction(
+            property=property_,
+            amount=1000.00,
+            note="Initial funding",
+        )
+
         session.add_all(
             [
                 landlord,
@@ -280,6 +339,8 @@ def seed_dummy_data():
                 *vendors,
                 issue,
                 *messages,
+                wallet,
+                wallet_topup,
             ]
         )
         session.commit()

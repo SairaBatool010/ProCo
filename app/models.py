@@ -23,6 +23,7 @@ class VendorRead(BaseModel):
 
     id: uuid.UUID
     name: str
+    email: str | None
     specialty: VendorSpecialty
     hourly_rate: float
     rating: float | None
@@ -76,3 +77,21 @@ class ChatResponse(BaseModel):
 class IssueActionResponse(BaseModel):
     id: uuid.UUID
     status: IssueStatus
+
+
+class WalletSummary(BaseModel):
+    property_id: uuid.UUID
+    balance: float
+    used: float
+    remaining: float
+
+
+class WalletTopupRequest(BaseModel):
+    property_id: uuid.UUID
+    amount: float
+    note: str | None = None
+
+
+class WalletBalanceUpdate(BaseModel):
+    property_id: uuid.UUID
+    balance: float

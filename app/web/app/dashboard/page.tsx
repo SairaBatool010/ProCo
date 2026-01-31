@@ -8,7 +8,19 @@ import { StatusChart } from "@/components/dashboard/status-chart";
 import { PropertyMap } from "@/components/dashboard/property-map";
 import { IssuesTable, type Issue, type IssueStatus } from "@/components/dashboard/issues-table";
 import { LayoutDashboard, AlertCircle, Clock, DollarSign, CheckCircle } from "lucide-react";
-import { approveIssue, fetchIssues, fetchVendors, formatDate, mapIssueStatus, rejectIssue } from "@/lib/api";
+import { jsPDF } from "jspdf";
+import {
+  approveIssue,
+  fetchIssues,
+  fetchVendors,
+  fetchWallets,
+  formatDate,
+  mapIssueStatus,
+  rejectIssue,
+  topupWallet,
+  updateWalletBalance,
+  type WalletSummary,
+} from "@/lib/api";
 
 const sampleProperties = [
   {
@@ -38,14 +50,18 @@ export default function DashboardPage() {
   const router = useRouter();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [wallets, setWallets] = useState<WalletSummary[]>([]);
+  const [walletEdits, setWalletEdits] = useState<Record<string, string>>({});
+  const [topupEdits, setTopupEdits] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let isMounted = true;
-    const loadIssues = async () => {
+    const loadData = async () => {
       try {
-        const [apiIssues, apiVendors] = await Promise.all([
+        const [apiIssues, apiVendors, apiWallets] = await Promise.all([
           fetchIssues(),
           fetchVendors(),
+          fetchWallets(),
         ]);
         const vendorMap = new Map(apiVendors.map((vendor) => [vendor.id, vendor.name]));
         const mappedIssues: Issue[] = apiIssues.map((issue) => ({
@@ -65,18 +81,20 @@ export default function DashboardPage() {
         }));
         if (isMounted) {
           setIssues(mappedIssues);
+          setWallets(apiWallets);
           setLoading(false);
         }
       } catch (error) {
         if (isMounted) {
           setIssues([]);
+          setWallets([]);
           setLoading(false);
         }
         console.error(error);
       }
     };
 
-    loadIssues();
+    loadData();
     return () => {
       isMounted = false;
     };
@@ -96,24 +114,60 @@ export default function DashboardPage() {
     }
   };
 
+  const refreshWallets = async () => {
+    try {
+      const apiWallets = await fetchWallets();
+      setWallets(apiWallets);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleWalletBalanceSave = async (propertyId: string) => {
+    const value = walletEdits[propertyId];
+    if (!value) return;
+    const balance = Number(value);
+    if (Number.isNaN(balance)) return;
+    await updateWalletBalance({ property_id: propertyId, balance });
+    await refreshWallets();
+  };
+
+  const handleWalletTopup = async (propertyId: string) => {
+    const value = topupEdits[propertyId];
+    if (!value) return;
+    const amount = Number(value);
+    if (Number.isNaN(amount)) return;
+    await topupWallet({ property_id: propertyId, amount, note: "Manual top-up" });
+    setTopupEdits((prev) => ({ ...prev, [propertyId]: "" }));
+    await refreshWallets();
+  };
+
   const handleChat = (id: string) => {
     // Navigate to landlord chat page with issue id
     router.push(`/dashboard/chat/${id}`);
   };
 
   const handleDownloadReport = (id: string) => {
-    // In production: trigger file download
     const issue = issues.find((i) => i.id === id);
     if (issue) {
-      // Simulate download - in production this would download a real PDF
-      const reportData = `Issue Report #${id}\n\nSummary: ${issue.summary}\nTenant: ${issue.tenantName}\nDate Reported: ${issue.dateReported}\nStatus: ${issue.status}\nVendor: ${issue.vendor}\nCost: $${issue.cost}`;
-      const blob = new Blob([reportData], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `issue-report-${id}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Issue Report #${id}`, 14, 20);
+      doc.setFontSize(11);
+      const lines = [
+        `Summary: ${issue.summary}`,
+        `Tenant: ${issue.tenantName}`,
+        `Date Reported: ${issue.dateReported}`,
+        `Status: ${issue.status}`,
+        `Vendor: ${issue.vendor}`,
+        `Cost: $${issue.cost.toLocaleString()}`,
+      ];
+      let y = 32;
+      lines.forEach((line) => {
+        doc.text(line, 14, y);
+        y += 8;
+      });
+      doc.save(`issue-report-${id}.pdf`);
     }
   };
 
@@ -124,6 +178,10 @@ export default function DashboardPage() {
   const totalSpend = issues
     .filter((i) => i.status === "Completed" || i.status === "Approved" || i.status === "In Progress")
     .reduce((sum, i) => sum + i.cost, 0);
+
+  const totalWalletBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+  const totalWalletUsed = wallets.reduce((sum, wallet) => sum + wallet.used, 0);
+  const totalWalletRemaining = wallets.reduce((sum, wallet) => sum + wallet.remaining, 0);
 
   // Chart data
   const statusChartData = [
@@ -182,10 +240,109 @@ export default function DashboardPage() {
           />
         </div>
 
+        <div className="grid gap-4 md:grid-cols-3 mb-8">
+          <StatsCard
+            title="Wallet Total"
+            value={`$${totalWalletBalance.toLocaleString()}`}
+            icon={DollarSign}
+            loading={loading}
+          />
+          <StatsCard
+            title="Wallet Used"
+            value={`$${totalWalletUsed.toLocaleString()}`}
+            icon={DollarSign}
+            loading={loading}
+          />
+          <StatsCard
+            title="Wallet Remaining"
+            value={`$${totalWalletRemaining.toLocaleString()}`}
+            icon={DollarSign}
+            loading={loading}
+          />
+        </div>
+
         {/* Charts and Map Row */}
         <div className="grid gap-6 lg:grid-cols-2 mb-8">
           <StatusChart data={statusChartData} />
-          <PropertyMap properties={sampleProperties} />
+          <PropertyMap
+            properties={sampleProperties.map((property) => {
+              const wallet = wallets.find((item) => item.property_id === property.id);
+              return {
+                ...property,
+                walletBalance: wallet?.balance,
+                walletUsed: wallet?.used,
+                walletRemaining: wallet?.remaining,
+              };
+            })}
+          />
+        </div>
+
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-foreground mb-3">
+            Property Wallets
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {sampleProperties.map((property) => {
+              const wallet = wallets.find((item) => item.property_id === property.id);
+              return (
+                <div
+                  key={property.id}
+                  className="rounded-lg border border-border bg-card p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{property.name}</p>
+                      <p className="text-xs text-muted-foreground">{property.address}</p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <div>Used: ${wallet?.used.toLocaleString() ?? 0}</div>
+                      <div>Remaining: ${wallet?.remaining.toLocaleString() ?? 0}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                        placeholder={wallet ? `${wallet.balance}` : "Set balance"}
+                        value={walletEdits[property.id] ?? ""}
+                        onChange={(event) =>
+                          setWalletEdits((prev) => ({
+                            ...prev,
+                            [property.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+                        onClick={() => handleWalletBalanceSave(property.id)}
+                      >
+                        Save
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                        placeholder="Top-up amount"
+                        value={topupEdits[property.id] ?? ""}
+                        onChange={(event) =>
+                          setTopupEdits((prev) => ({
+                            ...prev,
+                            [property.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="rounded-md bg-secondary px-3 py-2 text-sm text-secondary-foreground"
+                        onClick={() => handleWalletTopup(property.id)}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Issues Table */}

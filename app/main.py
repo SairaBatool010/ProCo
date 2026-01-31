@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import chat, health, issues, vendors
+from app.api.routers import chat, health, issues, vendors, wallets
 
 app = FastAPI(title="ProCo API")
 
@@ -17,3 +17,4 @@ app.include_router(health.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(vendors.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(wallets.router, prefix="/api")

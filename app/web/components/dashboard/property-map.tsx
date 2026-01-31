@@ -9,6 +9,9 @@ interface Property {
   name: string;
   address: string;
   activeIssues: number;
+  walletBalance?: number;
+  walletUsed?: number;
+  walletRemaining?: number;
   position: { x: number; y: number };
 }
 
@@ -115,6 +118,13 @@ export function PropertyMap({ properties }: PropertyMapProps) {
                     <Badge className="mt-2" variant={property.activeIssues > 0 ? "default" : "secondary"}>
                       {property.activeIssues} active issue{property.activeIssues !== 1 ? "s" : ""}
                     </Badge>
+                  {property.walletBalance !== undefined && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Wallet: ${property.walletBalance.toLocaleString()} · Used: $
+                      {(property.walletUsed ?? 0).toLocaleString()} · Remaining: $
+                      {(property.walletRemaining ?? 0).toLocaleString()}
+                    </div>
+                  )}
                   </div>
                 </div>
               </div>
@@ -136,9 +146,16 @@ export function PropertyMap({ properties }: PropertyMapProps) {
                   <p className="text-xs text-muted-foreground">{property.address}</p>
                 </div>
               </div>
-              <Badge variant={property.activeIssues > 0 ? "default" : "secondary"}>
-                {property.activeIssues} issue{property.activeIssues !== 1 ? "s" : ""}
-              </Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge variant={property.activeIssues > 0 ? "default" : "secondary"}>
+                  {property.activeIssues} issue{property.activeIssues !== 1 ? "s" : ""}
+                </Badge>
+                {property.walletBalance !== undefined && (
+                  <span className="text-xs text-muted-foreground">
+                    ${property.walletRemaining?.toLocaleString() ?? 0} remaining
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
