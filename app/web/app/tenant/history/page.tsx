@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { History, Calendar, RefreshCw } from "lucide-react";
 import { fetchIssues, formatDate, mapIssueStatus } from "@/lib/api";
+import { useActiveTenant } from "@/lib/tenant";
 
 type IssueStatus = "Pending" | "Approved" | "In Progress" | "Completed" | "Rejected";
 
@@ -52,7 +53,7 @@ function getStatusColor(status: IssueStatus) {
 }
 
 export default function TenantHistoryPage() {
-  const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID;
+  const { tenantId } = useActiveTenant();
   const [issues, setIssues] = useState<Issue[]>([]);
 
   useEffect(() => {

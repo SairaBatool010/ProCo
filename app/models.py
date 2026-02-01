@@ -29,6 +29,16 @@ class VendorRead(BaseModel):
     rating: float | None
 
 
+class PropertyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    address: str
+    landlord_id: uuid.UUID
+    latitude: float | None
+    longitude: float | None
+
+
 class IssueRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,6 +63,7 @@ class ChatMessageRead(BaseModel):
     tenant_id: uuid.UUID
     role: ChatRole
     content: str
+    image_base64: str | None
     created_at: datetime
 
 
@@ -64,6 +75,7 @@ class ChatMessageCreate(BaseModel):
 class ChatRequest(BaseModel):
     tenant_id: uuid.UUID
     message: str
+    image_base64: str | None = None
     issue_id: uuid.UUID | None = None
     property_id: uuid.UUID | None = None
 

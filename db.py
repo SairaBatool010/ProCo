@@ -75,6 +75,8 @@ class Property(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     address: Mapped[str] = mapped_column(String, nullable=False)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     landlord_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
@@ -162,9 +164,15 @@ class ChatMessage(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     role: Mapped[ChatRole] = mapped_column(
-        Enum(ChatRole, name="chat_role"), nullable=False
+        Enum(
+            ChatRole,
+            name="chat_role",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    image_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -243,7 +251,12 @@ def seed_dummy_data():
             role=UserRole.LANDLORD,
             name="Leslie Landlord",
         )
-        property_ = Property(address="123 Maple St, Austin, TX", landlord=landlord)
+        property_ = Property(
+            address="123 Maple St, Austin, TX",
+            landlord=landlord,
+            latitude=30.267153,
+            longitude=-97.743057,
+        )
         tenant_1 = User(
             email="tenant1@proco.dev",
             role=UserRole.TENANT,
@@ -260,28 +273,28 @@ def seed_dummy_data():
         vendors = [
             Vendor(
                 name="ABC HVAC",
-                email="dispatch@abchvac.example",
+                email="rajatrc1705@gmail.com",
                 specialty=VendorSpecialty.HEATING,
                 hourly_rate=125.00,
                 rating=4.7,
             ),
             Vendor(
                 name="FlowFix Plumbing",
-                email="support@flowfix.example",
+                email="rajatrc1705@gmail.com",
                 specialty=VendorSpecialty.PLUMBING,
                 hourly_rate=110.00,
                 rating=4.5,
             ),
             Vendor(
                 name="BrightSpark Electric",
-                email="hello@brightspark.example",
+                email="rajatrc1705@gmail.com",
                 specialty=VendorSpecialty.ELECTRICAL,
                 hourly_rate=135.00,
                 rating=4.8,
             ),
             Vendor(
                 name="Handy General Co",
-                email="contact@handygeneral.example",
+                email="rajatrc1705@gmail.com",
                 specialty=VendorSpecialty.GENERAL,
                 hourly_rate=95.00,
                 rating=4.2,

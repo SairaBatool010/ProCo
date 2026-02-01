@@ -14,14 +14,11 @@ interface StatsCardProps {
 export function StatsCard({ title, value, icon: Icon, loading }: StatsCardProps) {
   if (loading) {
     return (
-      <Card className="bg-card border-border">
+      <Card className="bg-card border-border/70 shadow-sm">
         <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-16" />
-            </div>
-            <Skeleton className="h-10 w-10 rounded-lg" />
+          <div className="space-y-3 text-center">
+            <Skeleton className="mx-auto h-8 w-24" />
+            <Skeleton className="mx-auto h-3 w-28" />
           </div>
         </CardContent>
       </Card>
@@ -29,16 +26,13 @@ export function StatsCard({ title, value, icon: Icon, loading }: StatsCardProps)
   }
 
   return (
-    <Card className="bg-card border-border">
+    <Card className="bg-card border-border/70 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
       <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-semibold text-foreground mt-1">{value}</p>
-          </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-            <Icon className="h-5 w-5 text-muted-foreground" />
-          </div>
+        <div className="text-center">
+          <p className="text-4xl font-semibold text-foreground">{value}</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {title}
+          </p>
         </div>
       </CardContent>
     </Card>

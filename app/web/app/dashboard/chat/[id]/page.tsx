@@ -7,6 +7,7 @@ import { use } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ type MessageSender = "tenant" | "ai" | "landlord";
 interface ChatMessage {
   id: string;
   content: string;
+  imageBase64?: string | null;
   sender: MessageSender;
   senderName: string;
   timestamp: Date;
@@ -130,6 +132,7 @@ export default function LandlordChatPage({ params }: { params: Promise<{ id: str
           const mappedMessages: ChatMessage[] = apiMessages.map((message) => ({
             id: message.id,
             content: message.content,
+            imageBase64: message.image_base64 ?? null,
             sender:
               message.role === "assistant"
                 ? "ai"
@@ -185,6 +188,7 @@ export default function LandlordChatPage({ params }: { params: Promise<{ id: str
     const optimistic: ChatMessage = {
       id: `local-${Date.now()}`,
       content: draft,
+      imageBase64: null,
       sender: "landlord",
       senderName: "Property Manager",
       timestamp: new Date(),
@@ -227,15 +231,17 @@ export default function LandlordChatPage({ params }: { params: Promise<{ id: str
     }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", { 
-      hour: "numeric", 
+  const formatTime = (value: Date | string) => {
+    const date = value instanceof Date ? value : new Date(value);
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
       minute: "2-digit",
-      hour12: true 
+      hour12: true,
     });
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (value: Date | string) => {
+    const date = value instanceof Date ? value : new Date(value);
     return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -318,6 +324,26 @@ export default function LandlordChatPage({ params }: { params: Promise<{ id: str
                             message.sender === "ai" && "bg-primary/5 text-foreground border border-primary/10",
                             message.sender === "landlord" && "bg-primary text-primary-foreground"
                           )}>
+                            {message.imageBase64 && (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <button type="button" className="mb-2">
+                                    <img
+                                      src={message.imageBase64}
+                                      alt="Tenant upload"
+                                      className="max-h-72 rounded-md object-cover"
+                                    />
+                                  </button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl">
+                                  <img
+                                    src={message.imageBase64}
+                                    alt="Tenant upload full size"
+                                    className="max-h-[75vh] w-full object-contain"
+                                  />
+                                </DialogContent>
+                              </Dialog>
+                            )}
                             {message.content}
                           </div>
                         </div>

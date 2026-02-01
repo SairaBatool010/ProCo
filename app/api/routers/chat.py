@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models import ChatRequest, ChatResponse
 from app.services.ai_agent import run_agent
+from app.services.vision import analyze_image
 from db import ChatMessage, ChatRole, User, UserRole
 
 router = APIRouter(tags=["chat"])
@@ -26,12 +27,20 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
             detail="Property ID is required for chat messages",
         )
 
+    image_description = None
+    if request.image_base64:
+        try:
+            image_description = analyze_image(request.image_base64)
+        except Exception:
+            image_description = None
+
     user_message = ChatMessage(
         issue_id=request.issue_id,
         property_id=property_id,
         tenant_id=tenant.id,
         role=ChatRole.USER,
         content=request.message,
+        image_base64=request.image_base64,
     )
     db.add(user_message)
     db.flush()
@@ -41,6 +50,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
         tenant_id=tenant.id,
         property_id=property_id,
         message=request.message,
+        image_description=image_description,
         issue_id=request.issue_id,
     )
 

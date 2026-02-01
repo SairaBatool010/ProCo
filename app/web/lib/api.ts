@@ -17,9 +17,26 @@ export type ApiIssue = {
 export type ApiVendor = {
   id: string;
   name: string;
+  email: string | null;
   specialty: string;
   hourly_rate: number;
   rating: number | null;
+};
+
+export type ApiProperty = {
+  id: string;
+  address: string;
+  landlord_id: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+export type ApiUser = {
+  id: string;
+  email: string;
+  role: string;
+  name: string;
+  property_id: string | null;
 };
 
 export type WalletSummary = {
@@ -42,12 +59,14 @@ export type ApiChatMessage = {
   tenant_id: string;
   role: string;
   content: string;
+  image_base64: string | null;
   created_at: string;
 };
 
 export type ChatRequest = {
   tenant_id: string;
   message: string;
+  image_base64?: string | null;
   issue_id?: string | null;
   property_id?: string | null;
 };
@@ -79,8 +98,37 @@ export async function postIssueMessage(
   });
 }
 
+export async function sendVendorRequest(issueId: string, vendorId: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/issues/${issueId}/vendor-request?vendor_id=${vendorId}`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `API error ${response.status}`);
+  }
+  return (await response.json()) as { status: string };
+}
+
 export async function fetchVendors(): Promise<ApiVendor[]> {
   return fetchJson<ApiVendor[]>("/vendors");
+}
+
+export async function fetchProperties(): Promise<ApiProperty[]> {
+  return fetchJson<ApiProperty[]>("/properties");
+}
+
+export async function fetchProperty(propertyId: string): Promise<ApiProperty> {
+  return fetchJson<ApiProperty>(`/properties/${propertyId}`);
+}
+
+export async function fetchUser(userId: string): Promise<ApiUser> {
+  return fetchJson<ApiUser>(`/users/${userId}`);
+}
+
+export async function fetchUsers(role?: string): Promise<ApiUser[]> {
+  const query = role ? `?role=${encodeURIComponent(role)}` : "";
+  return fetchJson<ApiUser[]>(`/users${query}`);
 }
 
 export async function fetchWallets(): Promise<WalletSummary[]> {

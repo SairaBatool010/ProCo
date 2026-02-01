@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChatMessage, type Message } from "@/components/chat/chat-message";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -21,50 +21,24 @@ import {
   Menu,
   X
 } from "lucide-react";
-import { postChat } from "@/lib/api";
-
-// Sample chat history
-const sampleChatHistory = [
-  {
-    id: "chat-1",
-    title: "Kitchen sink leak",
-    date: "Today",
-    preview: "Water leaking under the kitchen sink...",
-  },
-  {
-    id: "chat-2",
-    title: "Heating not working",
-    date: "Jan 28",
-    preview: "The heating system in the bedroom...",
-  },
-  {
-    id: "chat-3",
-    title: "Broken window lock",
-    date: "Jan 25",
-    preview: "The lock on my living room window...",
-  },
-];
+import { fetchIssueMessages, fetchIssues, postChat } from "@/lib/api";
+import { useActiveTenant } from "@/lib/tenant";
 
 interface ChatSession {
   id: string;
   title: string;
   date: string;
-  messages: Message[];
+  preview: string;
 }
 
 export default function TenantReportPage() {
   const router = useRouter();
-  const tenantId = process.env.NEXT_PUBLIC_DEMO_TENANT_ID;
-  const propertyId = process.env.NEXT_PUBLIC_DEMO_PROPERTY_ID;
+  const searchParams = useSearchParams();
+  const { tenantId, propertyId } = useActiveTenant();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeChat, setActiveChat] = useState<string>("new");
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>(
-    sampleChatHistory.map((chat) => ({
-      ...chat,
-      messages: [],
-    }))
-  );
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "initial",
@@ -87,7 +61,64 @@ export default function TenantReportPage() {
     scrollToBottom();
   }, [messages, isTyping, scrollToBottom]);
 
-  const handleSendMessage = async (content: string) => {
+  useEffect(() => {
+    const chatId = searchParams.get("chat");
+    if (!chatId) return;
+
+    setActiveChat(chatId);
+    setIsSubmitted(true);
+    setIssueId(chatId);
+
+    fetchIssueMessages(chatId)
+      .then((apiMessages) => {
+        const mapped = apiMessages.map((message) => ({
+          id: message.id,
+          content: message.content,
+          imageBase64: message.image_base64 ?? null,
+          role:
+            message.role === "user"
+              ? "user"
+              : message.role === "landlord"
+                ? "landlord"
+                : "assistant",
+          timestamp: new Date(message.created_at),
+        }));
+        if (mapped.length > 0) {
+          setMessages(mapped);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    fetchIssues()
+      .then((issues) => {
+        const filtered = issues
+          .filter((issue) => issue.tenant_id === tenantId)
+          .filter((issue) => (!propertyId ? true : issue.property_id === propertyId))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        const sessions: ChatSession[] = filtered.map((issue) => ({
+          id: issue.id,
+          title: issue.summary || "Maintenance Issue",
+          date: new Date(issue.created_at).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          }),
+          preview: issue.description || "Tap to view conversation",
+        }));
+        setChatSessions(sessions);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }, [tenantId, propertyId]);
+
+  const handleSendMessage = async (content: string, imageBase64?: string | null) => {
     if (isSubmitted || isTyping) return;
     if (!tenantId) {
       setMessages((prev) => [
@@ -105,6 +136,7 @@ export default function TenantReportPage() {
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       content,
+      imageBase64: imageBase64 ?? null,
       role: "user",
       timestamp: new Date(),
     };
@@ -116,6 +148,7 @@ export default function TenantReportPage() {
       const response = await postChat({
         tenant_id: tenantId,
         message: content,
+        image_base64: imageBase64 ?? null,
         issue_id: issueId,
         property_id: propertyId ?? null,
       });
@@ -168,33 +201,30 @@ export default function TenantReportPage() {
 
   const handleSelectChat = (chatId: string) => {
     setActiveChat(chatId);
-    const session = chatSessions.find((s) => s.id === chatId);
-    if (session && session.messages.length > 0) {
-      setMessages(session.messages);
-    } else {
-      // Load a sample conversation for demo
-      setMessages([
-        {
-          id: "hist-1",
-          content: "Hello! I'm ProCo, your AI property assistant. What seems to be the problem?",
-          role: "assistant",
-          timestamp: new Date(Date.now() - 86400000),
-        },
-        {
-          id: "hist-2",
-          content: sampleChatHistory.find((c) => c.id === chatId)?.preview || "",
-          role: "user",
-          timestamp: new Date(Date.now() - 86400000),
-        },
-        {
-          id: "hist-3",
-          content: "Thank you for reporting this. I've submitted this issue to your landlord for review.",
-          role: "assistant",
-          timestamp: new Date(Date.now() - 86400000),
-        },
-      ]);
-    }
+    setIssueId(chatId);
     setIsSubmitted(true);
+
+    fetchIssueMessages(chatId)
+      .then((apiMessages) => {
+        const mapped = apiMessages.map((message) => ({
+          id: message.id,
+          content: message.content,
+          imageBase64: message.image_base64 ?? null,
+          role:
+            message.role === "user"
+              ? "user"
+              : message.role === "landlord"
+                ? "landlord"
+                : "assistant",
+          timestamp: new Date(message.created_at),
+        }));
+        if (mapped.length > 0) {
+          setMessages(mapped);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+      });
     setMobileSidebarOpen(false);
   };
 
@@ -247,7 +277,7 @@ export default function TenantReportPage() {
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-1 pb-4">
             <p className="px-2 py-2 text-xs font-medium text-muted-foreground">Recent Chats</p>
-            {sampleChatHistory.map((chat) => (
+            {chatSessions.map((chat) => (
               <button
                 type="button"
                 key={chat.id}
@@ -311,7 +341,9 @@ export default function TenantReportPage() {
           <div className="flex items-center gap-2 lg:ml-auto lg:mr-auto">
             <MessageSquare className="h-5 w-5 text-primary" />
             <h1 className="font-semibold text-foreground">
-              {activeChat === "new" ? "New Issue Report" : sampleChatHistory.find((c) => c.id === activeChat)?.title || "Chat"}
+              {activeChat === "new"
+                ? "New Issue Report"
+                : chatSessions.find((c) => c.id === activeChat)?.title || "Chat"}
             </h1>
           </div>
           {/* Spacer for centering on desktop */}

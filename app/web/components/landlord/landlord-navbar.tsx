@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react"
+import React from "react";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Building2, Bell, User, Clock, Home, AlertCircle, MessageSquare, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,34 +18,29 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { fetchIssues, fetchProperties, fetchUser } from "@/lib/api";
 
-interface LandlordNavbarProps {
-  notificationCount?: number;
+type Notification = {
+  id: string;
+  type: "new_issue" | "status_change" | "message";
+  message: string;
+  meta?: string;
+  timestamp: string;
+  createdAt: Date;
+};
+
+function formatTimeAgo(date: Date) {
+  const diffMs = Date.now() - date.getTime();
+  if (Number.isNaN(diffMs) || diffMs < 0) return "just now";
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-
-const notifications = [
-  {
-    id: "1",
-    type: "new_issue",
-    message: "New issue reported: Kitchen sink leak",
-    tenant: "Sarah Johnson - Apt 4B",
-    timestamp: "10 minutes ago",
-  },
-  {
-    id: "2",
-    type: "status_change",
-    message: "Issue #1022 marked as completed",
-    tenant: "Mike Chen - Apt 2A",
-    timestamp: "1 hour ago",
-  },
-  {
-    id: "3",
-    type: "message",
-    message: "New message from tenant about issue #1020",
-    tenant: "Emma Wilson - Apt 5C",
-    timestamp: "3 hours ago",
-  },
-];
 
 const notificationIcons: Record<string, React.ReactNode> = {
   new_issue: <AlertCircle className="h-4 w-4 text-destructive" />,
@@ -53,8 +48,78 @@ const notificationIcons: Record<string, React.ReactNode> = {
   message: <MessageSquare className="h-4 w-4 text-primary" />,
 };
 
-export function LandlordNavbar({ notificationCount = 3 }: LandlordNavbarProps) {
+export function LandlordNavbar() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [landlordName, setLandlordName] = useState("Property Manager");
+  const [landlordRole, setLandlordRole] = useState("Landlord");
+  const demoLandlordId = process.env.NEXT_PUBLIC_DEMO_LANDLORD_ID;
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadNotifications = async () => {
+      try {
+        const issues = await fetchIssues();
+        const sorted = issues.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        const createdNotifications: Notification[] = sorted.slice(0, 20).map((issue) => {
+          const createdAt = new Date(issue.created_at);
+          return {
+            id: `new-${issue.id}`,
+            type: "new_issue",
+            message: `New issue reported: ${issue.summary}`,
+            meta: `Tenant ${issue.tenant_id.slice(0, 8)}`,
+            timestamp: formatTimeAgo(createdAt),
+            createdAt,
+          };
+        });
+        if (isMounted) {
+          setNotifications(createdNotifications);
+        }
+      } catch (error) {
+        console.error(error);
+        if (isMounted) {
+          setNotifications([]);
+        }
+      }
+    };
+
+    loadNotifications();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadLandlord = async () => {
+      try {
+        let landlordId = demoLandlordId;
+        if (!landlordId) {
+          const properties = await fetchProperties();
+          landlordId = properties[0]?.landlord_id;
+        }
+        if (!landlordId) return;
+        const user = await fetchUser(landlordId);
+        if (isMounted) {
+          setLandlordName(user.name || "Property Manager");
+          setLandlordRole(user.role === "landlord" ? "Landlord" : user.role);
+        }
+      } catch (error) {
+        console.error(error);
+        if (isMounted) {
+          setLandlordName("Property Manager");
+          setLandlordRole("Landlord");
+        }
+      }
+    };
+
+    loadLandlord();
+    return () => {
+      isMounted = false;
+    };
+  }, [demoLandlordId]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
@@ -72,9 +137,9 @@ export function LandlordNavbar({ notificationCount = 3 }: LandlordNavbarProps) {
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5 text-muted-foreground" />
-                {notificationCount > 0 && (
+                {notifications.length > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">
-                    {notificationCount > 9 ? "9+" : notificationCount}
+                    {notifications.length > 9 ? "9+" : notifications.length}
                   </span>
                 )}
               </Button>
@@ -94,7 +159,11 @@ export function LandlordNavbar({ notificationCount = 3 }: LandlordNavbarProps) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-foreground">{notification.message}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">{notification.tenant}</p>
+                            {notification.meta && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {notification.meta}
+                              </p>
+                            )}
                             <div className="flex items-center gap-1 mt-1.5 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
                               {notification.timestamp}
@@ -130,13 +199,9 @@ export function LandlordNavbar({ notificationCount = 3 }: LandlordNavbarProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <div className="px-2 py-1.5">
-                <p className="text-sm font-medium text-foreground">John Smith</p>
-                <p className="text-xs text-muted-foreground">Property Manager</p>
+                <p className="text-sm font-medium text-foreground">{landlordName}</p>
+                <p className="text-xs text-muted-foreground">{landlordRole}</p>
               </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard">Dashboard</Link>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link href="/" className="flex items-center gap-2">

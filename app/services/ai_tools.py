@@ -51,6 +51,36 @@ def estimate_cost(hourly_rate: float, category: IssueCategory) -> float:
     return round(hourly_rate * hours, 2)
 
 
+def _extract_severity(message: str) -> str:
+    lowered = message.lower()
+    high_keywords = ("urgent", "emergency", "asap", "flood", "sparking", "gas", "no heat")
+    medium_keywords = ("leak", "not working", "broken", "stopped", "no hot water")
+    if any(keyword in lowered for keyword in high_keywords):
+        return "High"
+    if any(keyword in lowered for keyword in medium_keywords):
+        return "Medium"
+    return "Low"
+
+
+def _extract_started(message: str) -> str:
+    lowered = message.lower()
+    for token in ("today", "yesterday", "this morning", "last night", "last week"):
+        if token in lowered:
+            return token
+    if "since" in lowered:
+        return "since reported"
+    if "for " in lowered and " day" in lowered:
+        return "for a few days"
+    return "Unknown"
+
+
 def build_summary(message: str, category: IssueCategory) -> str:
-    truncated = (message[:80] + "...") if len(message) > 80 else message
-    return f"{category.value.title()} issue: {truncated}"
+    truncated = (message[:180] + "...") if len(message) > 180 else message
+    severity = _extract_severity(message)
+    started = _extract_started(message)
+    return (
+        f"{category.value.title()} issue. "
+        f"Tenant report: {truncated} "
+        f"Started: {started}. "
+        f"Severity: {severity}."
+    )

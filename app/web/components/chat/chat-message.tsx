@@ -1,12 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bot, User } from "lucide-react";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Bot, Crown, User } from "lucide-react";
 
 export interface Message {
   id: string;
   content: string;
-  role: "user" | "assistant";
+  imageBase64?: string | null;
+  role: "user" | "assistant" | "landlord";
   timestamp: Date;
 }
 
@@ -16,6 +18,7 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const isLandlord = message.role === "landlord";
 
   return (
     <div
@@ -30,7 +33,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
           isUser ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
         )}
       >
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        {isUser ? (
+          <User className="h-4 w-4" />
+        ) : isLandlord ? (
+          <Crown className="h-4 w-4" />
+        ) : (
+          <Bot className="h-4 w-4" />
+        )}
       </div>
       <div
         className={cn(
@@ -41,16 +50,35 @@ export function ChatMessage({ message }: ChatMessageProps) {
         <div
           className={cn(
             "rounded-lg px-4 py-2.5",
-            isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-foreground"
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
           )}
         >
+          {message.imageBase64 && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <button type="button" className="mb-2">
+                  <img
+                    src={message.imageBase64}
+                    alt="Uploaded"
+                    className="max-h-64 rounded-md object-cover"
+                  />
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <img
+                  src={message.imageBase64}
+                  alt="Uploaded full size"
+                  className="max-h-[75vh] w-full object-contain"
+                />
+              </DialogContent>
+            </Dialog>
+          )}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
         </div>
-        <span className="text-xs text-muted-foreground px-1">
-          {formatTime(message.timestamp)}
-        </span>
+        <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+          {isLandlord && <span className="font-medium">Landlord</span>}
+          <span>{formatTime(message.timestamp)}</span>
+        </div>
       </div>
     </div>
   );

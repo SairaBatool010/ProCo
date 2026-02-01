@@ -8,9 +8,15 @@ import { StatusChart } from "@/components/dashboard/status-chart";
 import { PropertyMap } from "@/components/dashboard/property-map";
 import { IssuesTable, type Issue, type IssueStatus } from "@/components/dashboard/issues-table";
 import { LayoutDashboard, AlertCircle, Clock, DollarSign, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   approveIssue,
+  type ApiVendor,
   fetchIssues,
+  fetchProperties,
+  fetchUser,
   fetchVendors,
   fetchWallets,
   formatDate,
@@ -21,53 +27,62 @@ import {
   type WalletSummary,
 } from "@/lib/api";
 
-const sampleProperties = [
-  {
-    id: "1",
-    name: "Alster Residences",
-    address: "Jungfernstieg 12, Hamburg",
-    activeIssues: 3,
-    position: { x: 30, y: 35 },
-  },
-  {
-    id: "2",
-    name: "Speicherstadt Lofts",
-    address: "Brooktorkai 5, Hamburg",
-    activeIssues: 1,
-    position: { x: 55, y: 55 },
-  },
-  {
-    id: "3",
-    name: "HafenCity Plaza",
-    address: "Am Sandtorkai 48, Hamburg",
-    activeIssues: 0,
-    position: { x: 75, y: 45 },
-  },
-];
+type Property = {
+  id: string;
+  name: string;
+  address: string;
+  activeIssues: number;
+  latitude?: number | null;
+  longitude?: number | null;
+};
 
 export default function DashboardPage() {
   const router = useRouter();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [vendors, setVendors] = useState<ApiVendor[]>([]);
   const [wallets, setWallets] = useState<WalletSummary[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [walletEdits, setWalletEdits] = useState<Record<string, string>>({});
   const [topupEdits, setTopupEdits] = useState<Record<string, string>>({});
+  const [issueSearch, setIssueSearch] = useState("");
 
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
       try {
-        const [apiIssues, apiVendors, apiWallets] = await Promise.all([
+        const [apiIssues, apiVendors, apiWallets, apiProperties] = await Promise.all([
           fetchIssues(),
           fetchVendors(),
           fetchWallets(),
+          fetchProperties(),
         ]);
         const vendorMap = new Map(apiVendors.map((vendor) => [vendor.id, vendor.name]));
+        const propertyAddressMap = new Map(
+          apiProperties.map((property) => [property.id, property.address])
+        );
+        const uniqueTenantIds = Array.from(new Set(apiIssues.map((issue) => issue.tenant_id)));
+        const tenantEntries = await Promise.all(
+          uniqueTenantIds.map(async (tenantId) => {
+            try {
+              const user = await fetchUser(tenantId);
+              return [tenantId, user.name] as const;
+            } catch (error) {
+              console.error(error);
+              return [tenantId, "Unknown"] as const;
+            }
+          })
+        );
+        const tenantMap = new Map(tenantEntries);
         const mappedIssues: Issue[] = apiIssues.map((issue) => ({
           id: issue.id,
           summary: issue.summary,
+          description: issue.description,
+          propertyId: issue.property_id,
+          propertyAddress: propertyAddressMap.get(issue.property_id) ?? "Unknown property",
+          category: issue.category,
           dateReported: formatDate(issue.created_at),
-          tenantName: `Tenant ${issue.tenant_id.slice(0, 6)}`,
+          tenantName: tenantMap.get(issue.tenant_id) ?? "Unknown",
           vendor: issue.vendor_id ? vendorMap.get(issue.vendor_id) ?? "Unassigned" : "Unassigned",
           cost: issue.estimated_cost ?? 0,
           urgency:
@@ -78,15 +93,37 @@ export default function DashboardPage() {
               : "Medium",
           status: mapIssueStatus(issue.status) as IssueStatus,
         }));
+        const activeIssuesByProperty = apiIssues.reduce<Record<string, number>>(
+          (acc, issue) => {
+            const status = mapIssueStatus(issue.status);
+            if (status !== "Completed" && status !== "Rejected") {
+              acc[issue.property_id] = (acc[issue.property_id] ?? 0) + 1;
+            }
+            return acc;
+          },
+          {}
+        );
+        const mappedProperties: Property[] = apiProperties.map((property) => ({
+          id: property.id,
+          name: property.address.split(",")[0] ?? property.address,
+          address: property.address,
+          activeIssues: activeIssuesByProperty[property.id] ?? 0,
+          latitude: property.latitude,
+          longitude: property.longitude,
+        }));
         if (isMounted) {
           setIssues(mappedIssues);
+          setVendors(apiVendors);
           setWallets(apiWallets);
+          setProperties(mappedProperties);
           setLoading(false);
         }
       } catch (error) {
         if (isMounted) {
           setIssues([]);
+          setVendors([]);
           setWallets([]);
+          setProperties([]);
           setLoading(false);
         }
         console.error(error);
@@ -100,6 +137,9 @@ export default function DashboardPage() {
   }, []);
 
   const handleStatusChange = async (id: string, status: IssueStatus) => {
+    if (status === "Not Enough Budget") {
+      return;
+    }
     setIssues((prev) =>
       prev.map((issue) =>
         issue.id === id ? { ...issue, status } : issue
@@ -170,34 +210,68 @@ export default function DashboardPage() {
     doc.save(`issue-report-${id}.pdf`);
   };
 
-  // Calculate stats
-  const openIssues = issues.filter((i) => i.status !== "Completed" && i.status !== "Rejected").length;
-  const pendingApproval = issues.filter((i) => i.status === "Pending").length;
-  const completedIssues = issues.filter((i) => i.status === "Completed").length;
-  const totalSpend = issues
-    .filter((i) => i.status === "Completed" || i.status === "Approved" || i.status === "In Progress")
-    .reduce((sum, i) => sum + i.cost, 0);
-
   const totalWalletBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
   const totalWalletUsed = wallets.reduce((sum, wallet) => sum + wallet.used, 0);
   const totalWalletRemaining = wallets.reduce((sum, wallet) => sum + wallet.remaining, 0);
 
+  const walletRemainingByProperty = wallets.reduce<Record<string, number>>(
+    (acc, wallet) => {
+      acc[wallet.property_id] = wallet.remaining;
+      return acc;
+    },
+    {}
+  );
+
+  const suggestedVendorsByIssue = issues.reduce<Record<string, ApiVendor[]>>(
+    (acc, issue) => {
+      const desired = issue.category === "other" ? "general" : issue.category;
+      acc[issue.id] = vendors.filter((vendor) => vendor.specialty === desired);
+      return acc;
+    },
+    {}
+  );
+
+  const issuesWithBudgetStatus = issues.map((issue) => {
+    const remaining = walletRemainingByProperty[issue.propertyId] ?? 0;
+    const suggested = suggestedVendorsByIssue[issue.id] ?? [];
+    const withinBudget = suggested.filter((vendor) => vendor.hourly_rate <= remaining);
+    if (
+      withinBudget.length === 0 &&
+      issue.status !== "Completed" &&
+      issue.status !== "Rejected"
+    ) {
+      return { ...issue, status: "Not Enough Budget" as IssueStatus };
+    }
+    return issue;
+  });
+
+  // Calculate stats
+  const openIssues = issuesWithBudgetStatus.filter(
+    (i) => i.status !== "Completed" && i.status !== "Rejected"
+  ).length;
+  const pendingApproval = issuesWithBudgetStatus.filter((i) => i.status === "Pending").length;
+  const completedIssues = issuesWithBudgetStatus.filter((i) => i.status === "Completed").length;
+  const totalSpend = issuesWithBudgetStatus
+    .filter((i) => i.status === "Completed" || i.status === "Approved" || i.status === "In Progress")
+    .reduce((sum, i) => sum + i.cost, 0);
+
   // Chart data
   const statusChartData = [
-    { status: "Pending", count: issues.filter(i => i.status === "Pending").length },
-    { status: "Approved", count: issues.filter(i => i.status === "Approved").length },
-    { status: "In Progress", count: issues.filter(i => i.status === "In Progress").length },
-    { status: "Completed", count: issues.filter(i => i.status === "Completed").length },
+    { status: "Pending", count: issuesWithBudgetStatus.filter(i => i.status === "Pending").length },
+    { status: "Approved", count: issuesWithBudgetStatus.filter(i => i.status === "Approved").length },
+    { status: "In Progress", count: issuesWithBudgetStatus.filter(i => i.status === "In Progress").length },
+    { status: "Not Enough Budget", count: issuesWithBudgetStatus.filter(i => i.status === "Not Enough Budget").length },
+    { status: "Completed", count: issuesWithBudgetStatus.filter(i => i.status === "Completed").length },
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <LandlordNavbar notificationCount={pendingApproval} />
-      <main className="container px-4 py-8 md:px-6">
+    <div className="min-h-screen bg-muted/30">
+      <LandlordNavbar />
+      <main className="mx-auto w-full max-w-[1400px] px-4 py-8 md:px-6">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div className="mb-8 rounded-xl border border-border/70 bg-card/90 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <LayoutDashboard className="h-5 w-5" />
             </div>
             <div>
@@ -239,32 +313,11 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3 mb-8">
-          <StatsCard
-            title="Wallet Total"
-            value={`$${totalWalletBalance.toLocaleString()}`}
-            icon={DollarSign}
-            loading={loading}
-          />
-          <StatsCard
-            title="Wallet Used"
-            value={`$${totalWalletUsed.toLocaleString()}`}
-            icon={DollarSign}
-            loading={loading}
-          />
-          <StatsCard
-            title="Wallet Remaining"
-            value={`$${totalWalletRemaining.toLocaleString()}`}
-            icon={DollarSign}
-            loading={loading}
-          />
-        </div>
-
         {/* Charts and Map Row */}
         <div className="grid gap-6 lg:grid-cols-2 mb-8">
           <StatusChart data={statusChartData} />
           <PropertyMap
-            properties={sampleProperties.map((property) => {
+            properties={properties.map((property) => {
               const wallet = wallets.find((item) => item.property_id === property.id);
               return {
                 ...property,
@@ -277,68 +330,69 @@ export default function DashboardPage() {
         </div>
 
         <div className="mb-8">
-          <h2 className="text-lg font-semibold text-foreground mb-3">
-            Property Wallets
-          </h2>
+          <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Property Wallets
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Total ${totalWalletBalance.toLocaleString()} · Used $
+              {totalWalletUsed.toLocaleString()} · Remaining $
+              {totalWalletRemaining.toLocaleString()}
+            </p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
-            {sampleProperties.map((property) => {
+            {properties.map((property) => {
               const wallet = wallets.find((item) => item.property_id === property.id);
               return (
-                <div
+                <Card
                   key={property.id}
-                  className="rounded-lg border border-border bg-card p-4"
+                  className="border-border/70 bg-card/90 shadow-sm"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{property.name}</p>
-                      <p className="text-xs text-muted-foreground">{property.address}</p>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{property.name}</p>
+                        <p className="text-xs text-muted-foreground">{property.address}</p>
+                      </div>
+                      <div className="text-right text-xs text-muted-foreground">
+                        <div>Used: ${wallet?.used.toLocaleString() ?? 0}</div>
+                        <div>Remaining: ${wallet?.remaining.toLocaleString() ?? 0}</div>
+                      </div>
                     </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <div>Used: ${wallet?.used.toLocaleString() ?? 0}</div>
-                      <div>Remaining: ${wallet?.remaining.toLocaleString() ?? 0}</div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder={wallet ? `${wallet.balance}` : "Set balance"}
+                          value={walletEdits[property.id] ?? ""}
+                          onChange={(event) =>
+                            setWalletEdits((prev) => ({
+                              ...prev,
+                              [property.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <Button onClick={() => handleWalletBalanceSave(property.id)}>
+                          Save
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Top-up amount"
+                          value={topupEdits[property.id] ?? ""}
+                          onChange={(event) =>
+                            setTopupEdits((prev) => ({
+                              ...prev,
+                              [property.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <Button variant="secondary" onClick={() => handleWalletTopup(property.id)}>
+                          Add
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                        placeholder={wallet ? `${wallet.balance}` : "Set balance"}
-                        value={walletEdits[property.id] ?? ""}
-                        onChange={(event) =>
-                          setWalletEdits((prev) => ({
-                            ...prev,
-                            [property.id]: event.target.value,
-                          }))
-                        }
-                      />
-                      <button
-                        className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
-                        onClick={() => handleWalletBalanceSave(property.id)}
-                      >
-                        Save
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                        placeholder="Top-up amount"
-                        value={topupEdits[property.id] ?? ""}
-                        onChange={(event) =>
-                          setTopupEdits((prev) => ({
-                            ...prev,
-                            [property.id]: event.target.value,
-                          }))
-                        }
-                      />
-                      <button
-                        className="rounded-md bg-secondary px-3 py-2 text-sm text-secondary-foreground"
-                        onClick={() => handleWalletTopup(property.id)}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
@@ -346,14 +400,32 @@ export default function DashboardPage() {
 
         {/* Issues Table */}
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-foreground">
-            Maintenance Requests
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Maintenance Requests
+            </h2>
+            <Input
+              value={issueSearch}
+              onChange={(event) => setIssueSearch(event.target.value)}
+              placeholder="Search by property or tenant"
+              className="w-full sm:w-[260px]"
+            />
+          </div>
           <IssuesTable
-            issues={issues}
+            issues={issuesWithBudgetStatus.filter((issue) => {
+              const term = issueSearch.trim().toLowerCase();
+              if (!term) return true;
+              return (
+                issue.propertyAddress.toLowerCase().includes(term) ||
+                issue.tenantName.toLowerCase().includes(term)
+              );
+            })}
             onStatusChange={handleStatusChange}
             onChat={handleChat}
             onDownloadReport={handleDownloadReport}
+            vendors={vendors}
+            walletRemainingByProperty={walletRemainingByProperty}
+            suggestedVendorsByIssue={suggestedVendorsByIssue}
             loading={loading}
           />
         </div>
