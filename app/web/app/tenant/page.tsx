@@ -36,6 +36,7 @@ interface TenantIssue {
   id: string;
   summary: string;
   createdAt: string;
+  appointmentAt: string | null;
   vendorId: string | null;
   status: string;
 }
@@ -136,19 +137,22 @@ export default function TenantHomePage() {
             dateSubmitted: formatDate(issue.created_at),
             createdAt: issue.created_at,
           }));
-        const tenantIssueRecords = apiIssues
-          .filter((issue) => issue.tenant_id === tenantId)
+        const appointmentIssues = apiIssues
+          .filter((issue) =>
+            tenantPropertyId ? issue.property_id === tenantPropertyId : issue.tenant_id === tenantId
+          )
           .map((issue) => ({
             id: issue.id,
             summary: issue.summary,
             createdAt: issue.created_at,
+            appointmentAt: issue.appointment_at,
             vendorId: issue.vendor_id,
             status: issue.status,
           }));
         if (isMounted) {
           setSubmittedIssues(tenantIssues);
           setApartmentIssues(apartmentIssueList);
-          setTenantIssues(tenantIssueRecords);
+          setTenantIssues(appointmentIssues);
         }
       } catch (error) {
         if (isMounted) {
@@ -228,11 +232,16 @@ export default function TenantHomePage() {
   const upcomingAppointments: AppointmentRow[] = tenantIssues
     .filter((issue) => issue.vendorId)
     .filter((issue) => issue.status === "in_progress")
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .filter((issue) => Boolean(issue.appointmentAt))
+    .sort(
+      (a, b) =>
+        new Date(a.appointmentAt ?? a.createdAt).getTime() -
+        new Date(b.appointmentAt ?? b.createdAt).getTime()
+    )
     .map((issue) => ({
       id: issue.id,
       vendorName: vendorsById[issue.vendorId ?? ""] ?? "Assigned vendor",
-      date: formatDate(issue.createdAt),
+      date: formatDate(issue.appointmentAt ?? issue.createdAt),
       issueTitle: issue.summary,
     }));
   const appointmentsTotalPages = Math.max(
